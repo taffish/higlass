@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+
+mkdir -p /data/log
+cd /home/higlass/projects/higlass-server
+exec python manage.py "$@"

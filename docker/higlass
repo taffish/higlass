@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_VERSION="0.10.4"
+HOST_PORT="${HIGLASS_HOST_PORT:-8888}"
+LOG_FILE="${HIGLASS_LOG_FILE:-/tmp/higlass-supervisord.log}"
+
+print_help() {
+  cat <<'EOF'
+Usage: higlass [OPTIONS]
+
+Start the packaged HiGlass browser service.
+
+Options:
+  --host-port PORT   Host port shown in the printed URL (default: 8888)
+  --version          Show packaged HiGlass Docker component versions
+  -h, --help         Show this help
+
+Environment:
+  HIGLASS_HOST_PORT  Default host port used only for the printed URL
+  HIGLASS_LOG_FILE   Internal supervisor log path
+
+The container listens on port 80. Map a host port with Docker/Podman run args:
+  -p 127.0.0.1:8888:80
+EOF
+}
+
+print_version() {
+  echo "higlass-docker ${APP_VERSION}"
+  if [ -r /home/higlass/projects/higlass-app/version.txt ]; then
+    cat /home/higlass/projects/higlass-app/version.txt
+  fi
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --host-port)
+      if [ "$#" -lt 2 ]; then
+        echo "higlass: --host-port requires a value" >&2
+        exit 2
+      fi
+      HOST_PORT="$2"
+      shift 2
+      ;;
+    --host-port=*)
+      HOST_PORT="${1#*=}"
+      shift
+      ;;
+    --)
+      shift
+      ;;
+    --version)
+      print_version
+      exit 0
+      ;;
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    server|start)
+      shift
+      ;;
+    *)
+      echo "higlass: unknown option or command: $1" >&2
+      echo "Run 'higlass --help' for usage." >&2
+      exit 2
+      ;;
+  esac
+done
+
+mkdir -p /data/log
+
+cat <<EOF
+HiGlass is starting.
+
+Open this URL after mapping the container port to the host:
+  http://127.0.0.1:${HOST_PORT}/
+
+If this is running on a remote server over SSH, tunnel the port first:
+  ssh -L ${HOST_PORT}:127.0.0.1:${HOST_PORT} user@server
+
+Then open the same URL in your local browser.
+
+Press Ctrl-C to stop the HiGlass session.
+EOF
+
+supervisord -n -c /home/higlass/projects/supervisord.conf >"${LOG_FILE}" 2>&1 &
+service_pid="$!"
+
+cleanup() {
+  status="$?"
+  if kill -0 "${service_pid}" 2>/dev/null; then
+    kill "${service_pid}" 2>/dev/null || true
+    wait "${service_pid}" 2>/dev/null || true
+  fi
+  exit "${status}"
+}
+
+trap cleanup INT TERM EXIT
+wait "${service_pid}"
