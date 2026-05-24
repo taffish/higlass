@@ -33,7 +33,7 @@ taf install higlass
 Install the exact release:
 
 ```sh
-taf install higlass 0.10.4-r1
+taf install higlass 0.10.4-r2
 ```
 
 For local testing before the app is published to the public index:
@@ -137,9 +137,9 @@ taf-higlass higlass-manage migrate
 ```text
 name: higlass
 command: taf-higlass
-version: 0.10.4-r1
+version: 0.10.4-r2
 kind: tool
-image: ghcr.io/taffish/higlass:0.10.4-r1
+image: ghcr.io/taffish/higlass:0.10.4-r2
 upstream: higlass-docker v0.10.4
 runtime components: higlass-server 1.14.8, higlass library 1.11.4
 native platform: linux/amd64
@@ -221,6 +221,10 @@ test:  the user-facing localhost URL is printed
 These checks validate the packaged service stack and browser access path. They
 do not replace manual testing with real Hi-C/cooler datasets.
 
+## License Boundary
+
+The TAFFISH app packaging files are licensed under Apache-2.0. The packaged upstream HiGlass software is covered by: MIT. Bundled third-party components, datasets, models, and external resources keep their own license terms.
+
 ## Upstream
 
 ```text
@@ -229,7 +233,7 @@ homepage: https://higlass.io/
 source:   https://github.com/higlass/higlass-docker
 release:  https://github.com/higlass/higlass-docker/tree/v0.10.4
 image:    docker://higlass/higlass-docker:0.10.4
-license:  MIT
+upstream license: MIT
 citation: Kerpedjiev et al. 2018, HiGlass: web-based visual exploration and analysis of genome interaction maps
 doi:      10.1186/s13059-018-1486-1
 pmid:     30143029

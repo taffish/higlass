@@ -1,4 +1,4 @@
-taf-higlass 0.10.4-r1
+taf-higlass 0.10.4-r2
 
 TAFFISH wrapper for HiGlass Docker, a browser-based service for interactive
 visualization of Hi-C contact maps and other tiled genomic tracks.
@@ -84,17 +84,23 @@ Notes:
     amd64 support vary across clusters.
 
 Container:
-  image: ghcr.io/taffish/higlass:0.10.4-r1
+  image: ghcr.io/taffish/higlass:0.10.4-r2
   backends: apptainer, podman, docker
   native platform: linux/amd64
   arm64 Docker/Podman hosts: amd64 emulation through --platform linux/amd64
+
+License:
+  TAFFISH app packaging: Apache-2.0.
+  Upstream software: MIT.
+  Bundled components, data, models, and external resources keep their
+  own license terms.
 
 Upstream:
   source: https://github.com/higlass/higlass-docker
   homepage: https://higlass.io/
   release: https://github.com/higlass/higlass-docker/tree/v0.10.4
   image: docker://higlass/higlass-docker:0.10.4
-  license: MIT
+  upstream license: MIT
   citation: Kerpedjiev et al. 2018
   doi: 10.1186/s13059-018-1486-1
   pmid: 30143029
