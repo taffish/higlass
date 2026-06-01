@@ -1,25 +1,32 @@
 # taf-higlass
 
-TAFFISH wrapper for [HiGlass](https://higlass.io/), a browser-based viewer for
-interactive exploration of Hi-C contact maps and other tiled genomic tracks.
+TAFFISH wrapper for [HiGlass](https://higlass.io/), a browser-based genome
+data viewer for Hi-C contact maps and other tiled genomic tracks.
 
-This app packages the official [higlass-docker](https://github.com/higlass/higlass-docker)
-`0.10.4` service image. That distribution bundles the web app, the Django-based
-HiGlass server, nginx, uwsgi, and tile-ingest tooling in one container.
+This release follows the "current upstream source" route. It builds a small
+TAFFISH web viewer directly from official
+[higlass/higlass](https://github.com/higlass/higlass) tag `v2.3.4` with Vite,
+then serves it with a pinned HiGlass server stack. It does not inherit the old
+DockerHub `higlass/higlass-docker` image, and it no longer mixes the legacy
+`higlass-app` bundle with a newer `hglib`.
 
-The packaged service components are:
+Packaged components:
 
 ```text
-higlass-docker: 0.10.4
-higlass-server: 1.14.8
-higlass-app:    1.1.11
-higlass library: 1.11.4
-clodius:        0.19.0
+higlass frontend source:        v2.3.4
+higlass frontend commit:        5600c33ba6431b1ca53db35be31838115673c843
+frontend build:                 taffish-vite-viewer
+higlass-server:                 1.14.8
+higlass-server commit:          cbfe79fe3ae0e844b4c0c78142a83733c8cc66a2
+higlass-docker service scaffold: v0.10.5
+higlass-docker commit:          486514cc69c2a267c4210976daf6558b3e0653cc
+clodius:                        0.19.0
+pandas:                         1.5.3
+numba/llvmlite:                 0.56.4 / 0.39.1
 ```
 
-The standalone `higlass` JavaScript package has newer source tags, but this
-TAFFISH release follows the official Docker distribution because it is the
-reproducible upstream service package.
+The `higlass-docker` repository is used only as a pinned source for nginx,
+uwsgi, supervisord, and default server configuration files.
 
 ## Installation
 
@@ -33,7 +40,7 @@ taf install higlass
 Install the exact release:
 
 ```sh
-taf install higlass 0.10.4-r2
+taf install higlass 2.3.4-r1
 ```
 
 For local testing before the app is published to the public index:
@@ -50,35 +57,41 @@ Show TAFFISH app help:
 taf-higlass --help
 ```
 
-Show the TAFFISH package version:
+Show packaged component versions:
 
 ```sh
-taf-higlass --version
+taf-higlass -- --version
 ```
 
 Start the HiGlass web service through Docker:
 
 ```sh
+mkdir -p higlass-data higlass-tmp
+
 TAFFISH_CONTAINER_BACKEND=docker \
 TAFFISH_DOCKER_RUN_ARGS="-p 127.0.0.1:8888:80 -v \"$PWD/higlass-data:/data\" -v \"$PWD/higlass-tmp:/tmp\"" \
-taf-higlass
+taf-higlass --host-port 8888
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:8888/
+http://127.0.0.1:8888/app
 ```
 
-The helper prints this URL at startup, plus an SSH tunnel example for remote
-servers.
+The first page can look almost empty. That is expected until a view config or
+tileset has been loaded. A normal blank starting state usually still has the
+HiGlass toolbar at the top and may say `no chromosome track present`; it means
+the browser viewer is running, not that the app failed.
 
-Podman uses the same idea with the Podman run-args variable:
+Podman uses the same pattern:
 
 ```sh
+mkdir -p higlass-data higlass-tmp
+
 TAFFISH_CONTAINER_BACKEND=podman \
 TAFFISH_PODMAN_RUN_ARGS="-p 127.0.0.1:8888:80 -v \"$PWD/higlass-data:/data\" -v \"$PWD/higlass-tmp:/tmp\"" \
-taf-higlass
+taf-higlass --host-port 8888
 ```
 
 Use another host port if `8888` is already occupied:
@@ -96,69 +109,139 @@ ssh -L 8888:127.0.0.1:8888 user@server
 
 Then open the same localhost URL in your local browser.
 
-## Data And Ingest
+## Browser Routes
 
-HiGlass is a server for prepared tiled datasets. The official image includes
-`higlass-server/manage.py`, `clodius`, `cooler`-oriented ingest support, and
-related Python dependencies from the upstream Docker distribution.
+The packaged viewer is intentionally small and local-service oriented:
 
-Use persistent host directories for `/data` and `/tmp` when you want uploaded or
-ingested datasets to survive the TAFFISH one-shot container:
-
-```sh
-mkdir -p higlass-data higlass-tmp
+```text
+/app                 load the default server view config
+/app?empty=1         open an empty editable viewer
+/app?d=UID           load a stored view config by uid from /api/v1/viewconfs/
+/app?viewconf=UID    same as d=UID
+/app?config=URL      load a view config JSON document from URL
+/app?config=URL&localOnly=1
+                     load that config but rewrite source servers to /api/v1
 ```
 
-Place input files under the host directory mapped to `/tmp`, then use the
-`higlass-manage` helper through command mode:
+Default and stored configs use the local server as their track source. Explicit
+`?config=URL` inputs are respected by default because users sometimes need to
+inspect an existing HiGlass view config that points to a remote tile server.
+
+## What To Do After Startup
+
+HiGlass is a browser service plus a tileset database. A useful local session
+usually follows this path:
+
+```text
+prepare or obtain tiled data -> ingest_tileset -> start service -> open /app -> add track
+```
+
+For example, after ingesting a cooler matrix as `sample-matrix`, start the
+service, open `/app`, click the `+` button in the upper-right toolbar, choose a
+track position, select the local server tileset, and choose a compatible matrix
+track type. If the view is still empty, check that the same persistent `/data`
+directory was used for both `ingest_tileset` and service startup.
+
+Use this command to list tilesets already registered in the mounted `/data`
+database:
 
 ```sh
 TAFFISH_CONTAINER_BACKEND=docker \
 TAFFISH_DOCKER_RUN_ARGS="-v \"$PWD/higlass-data:/data\" -v \"$PWD/higlass-tmp:/tmp\"" \
-taf-higlass higlass-manage ingest_tileset \
-  --filename /tmp/sample.multires.cool \
-  --filetype cooler \
-  --datatype matrix
+taf-higlass higlass-manage list_tilesets
 ```
 
-Start the web service with the same `/data` and `/tmp` bindings to view the
-tileset.
+## Data And Mounts
 
-The first service start initializes the Django database in `/data`. For advanced
-administration, command mode can call other Django management commands:
+HiGlass is useful only when the server can see prepared tiled datasets and keep
+a persistent database. The container can start without host mounts, but any
+anonymous container data will disappear after the TAFFISH run ends. For real
+work, mount persistent host directories to `/data` and `/tmp`.
+
+Host bind mounts are intentionally not hardcoded into `src/main.taf`. Local
+paths, port bindings, site policy, and whether data should be read-only or
+writable are run-time decisions, so they belong in
+`TAFFISH_DOCKER_RUN_ARGS` or `TAFFISH_PODMAN_RUN_ARGS`.
+
+Recommended layout:
+
+```text
+higlass-data/        persistent Django database, media files, and server logs
+higlass-tmp/         temporary files and optional input staging
+```
+
+Example ingest with a cooler matrix:
+
+```sh
+mkdir -p higlass-data/media higlass-tmp
+cp sample.multires.cool higlass-data/media/
+
+TAFFISH_CONTAINER_BACKEND=docker \
+TAFFISH_DOCKER_RUN_ARGS="-v \"$PWD/higlass-data:/data\" -v \"$PWD/higlass-tmp:/tmp\"" \
+taf-higlass higlass-manage ingest_tileset \
+  --filename /data/media/sample.multires.cool \
+  --filetype cooler \
+  --datatype matrix \
+  --uid sample-matrix
+```
+
+Start the service with the same `/data` binding to view the ingested tileset.
+For advanced administration, command mode can call other Django management
+commands:
 
 ```sh
 taf-higlass higlass-manage help
 taf-higlass higlass-manage migrate
 ```
 
+## Learning HiGlass
+
+This TAFFISH app keeps the service local and reproducible; it does not replace
+the upstream HiGlass manuals. Recommended upstream reading:
+
+- [HiGlass documentation](https://docs.higlass.io/)
+- [HiGlass tutorial](https://docs.higlass.io/tutorial.html)
+- [Data preparation](https://docs.higlass.io/data_preparation.html)
+- [HiGlass server and `ingest_tileset`](https://docs.higlass.io/higlass_server.html)
+- [View configs](https://docs.higlass.io/view_config.html)
+- [Views and tracks](https://docs.higlass.io/views.html)
+
+When adapting upstream examples to TAFFISH, replace direct container commands
+with `taf-higlass higlass-manage ...`, keep input files under the mounted
+`/data` path, and start the service with the same `/data` binding.
+
 ## Package
 
 ```text
 name: higlass
 command: taf-higlass
-version: 0.10.4-r2
+version: 2.3.4-r1
 kind: tool
-image: ghcr.io/taffish/higlass:0.10.4-r2
-upstream: higlass-docker v0.10.4
-runtime components: higlass-server 1.14.8, higlass library 1.11.4
+image: ghcr.io/taffish/higlass:2.3.4-r1
+upstream: HiGlass v2.3.4 source
 native platform: linux/amd64
 ```
 
 ## Container
 
-The container image is built from `docker/Dockerfile`. It starts from the
-official `higlass/higlass-docker:0.10.4` image and adds two TAFFISH-friendly
-helpers:
+The image is built from `docker/Dockerfile`. It uses a two-stage build:
+
+```text
+frontend stage: node:22-bookworm builds the v2.3.4 HiGlass viewer
+runtime stage:  ubuntu:20.04 runs higlass-server, nginx, uwsgi, supervisord
+```
+
+TAFFISH helpers:
 
 ```text
 higlass          starts the browser service and prints the host URL
 higlass-manage   runs /home/higlass/projects/higlass-server/manage.py
 ```
 
-The original service stack remains upstream's nginx + uwsgi + supervisord
-layout. The app helper hides routine supervisor logs in `/tmp/higlass-supervisord.log`
-and lets Ctrl-C stop the service session.
+The service stack remains the upstream nginx + uwsgi + supervisord layout. The
+`higlass` helper waits until `/api/v1/tilesets/`, `/api/v1/viewconfs/?d=default`,
+and `/app` respond before printing the ready URL. On startup failure it prints
+the relevant service logs.
 
 The image is built and validated for:
 
@@ -166,14 +249,26 @@ The image is built and validated for:
 linux/amd64
 ```
 
-The official upstream Docker image is amd64-only. On arm64 Docker/Podman hosts,
-including Apple Silicon machines, the `<taf-app:...>` entry requests
-`--platform linux/amd64` so the same app can run through Docker/Podman amd64
-emulation. This is a compatibility path, not native `linux/arm64` support.
+On arm64 Docker/Podman hosts, including Apple Silicon machines, the
+`<taf-app:...>` entry requests `--platform linux/amd64` so the same app can run
+through Docker/Podman amd64 emulation. This is a compatibility path, not native
+`linux/arm64` support.
 
-The `<taf-app:...>` entry also embeds `--init` for Docker and Podman so the
+The Dockerfile exposes `UBUNTU_MIRROR` and `PIP_INDEX_URL` build arguments for
+maintainers who need regional mirrors.
+
+The upstream `higlass-server 1.14.8` requirements still carry old pins for
+`numba`, `numpy`, and `clodius`. This image keeps the server version fixed but
+installs compatible Python 3.8 pins for the service runtime: `numpy 1.22.1`,
+`pandas 1.5.3`, `numba 0.56.4`, `llvmlite 0.39.1`, and `clodius 0.19.0`.
+Additional service support packages are also pinned in the Dockerfile,
+including `pysam 0.24.0`, `uWSGI 2.0.31`, `SciPy 1.10.1`, `pyBigWig 0.3.22`,
+and the `wait-for-it` helper commit used by the upstream service scaffold.
+
+The `<taf-app:...>` entry embeds `--init` for Docker and Podman so the
 long-running service receives signals and cleans up child processes more
-reliably.
+reliably. It also embeds `--platform linux/amd64`; host ports and host data
+mounts remain user-provided run arguments.
 
 ## Security And Ports
 
@@ -191,11 +286,10 @@ require admin access.
 
 ## Boundaries
 
-This app packages the official all-in-one HiGlass Docker service. It does not
-rebuild the newer standalone `higlass` JavaScript package from source, and it
-does not include a site-specific catalog, public data mirror, authentication
-layer, TLS certificates, scheduler integration, or a persistent named Docker
-container.
+This app packages the latest verified HiGlass browser source tag with the
+current HiGlass server tag and a pinned service scaffold. It does not include a
+site-specific catalog, public data mirror, authentication layer, TLS
+certificates, scheduler integration, or a persistent named Docker container.
 
 Large data preparation remains a user workflow. The packaged server can ingest
 supported files through `higlass-manage`, but production-scale data staging,
@@ -211,11 +305,13 @@ The TAFFISH metadata declares Docker smoke checks that verify:
 
 ```text
 exist: higlass, higlass-manage, supervisord, nginx, uwsgi, python, curl
-test:  packaged component versions are pinned
+test:  packaged component versions and pinned commits are reported
 test:  helper help text is available
 test:  Django management commands are reachable
-test:  the HiGlass service starts and /api/v1/tilesets/ responds
-test:  the user-facing localhost URL is printed
+test:  clodius/cooler/pandas/numba import successfully
+test:  the service starts and /api/v1/tilesets/ responds
+test:  /api/v1/viewconfs/?d=default and /app respond
+test:  the user-facing localhost /app URL is printed
 ```
 
 These checks validate the packaged service stack and browser access path. They
@@ -223,16 +319,18 @@ do not replace manual testing with real Hi-C/cooler datasets.
 
 ## License Boundary
 
-The TAFFISH app packaging files are licensed under Apache-2.0. The packaged upstream HiGlass software is covered by: MIT. Bundled third-party components, datasets, models, and external resources keep their own license terms.
+The TAFFISH app packaging files are licensed under Apache-2.0. The packaged
+upstream HiGlass software is covered by MIT. Bundled third-party components,
+datasets, models, and external resources keep their own license terms.
 
 ## Upstream
 
 ```text
-project: HiGlass Docker
+project: HiGlass
 homepage: https://higlass.io/
-source:   https://github.com/higlass/higlass-docker
-release:  https://github.com/higlass/higlass-docker/tree/v0.10.4
-image:    docker://higlass/higlass-docker:0.10.4
+source:   https://github.com/higlass/higlass
+release:  https://github.com/higlass/higlass/tree/v2.3.4
+source commit: 5600c33ba6431b1ca53db35be31838115673c843
 upstream license: MIT
 citation: Kerpedjiev et al. 2018, HiGlass: web-based visual exploration and analysis of genome interaction maps
 doi:      10.1186/s13059-018-1486-1

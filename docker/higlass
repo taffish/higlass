@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_VERSION="0.10.4"
+APP_VERSION="2.3.4"
 HOST_PORT="${HIGLASS_HOST_PORT:-8888}"
 LOG_FILE="${HIGLASS_LOG_FILE:-/tmp/higlass-supervisord.log}"
+STARTUP_TIMEOUT="${HIGLASS_STARTUP_TIMEOUT:-120}"
 
 print_help() {
   cat <<'EOF'
@@ -12,13 +13,16 @@ Usage: higlass [OPTIONS]
 Start the packaged HiGlass browser service.
 
 Options:
-  --host-port PORT   Host port shown in the printed URL (default: 8888)
-  --version          Show packaged HiGlass Docker component versions
-  -h, --help         Show this help
+  --host-port PORT      Host port shown in the printed URL (default: 8888)
+  --startup-timeout N   Seconds to wait for service readiness (default: 120)
+  --log-file FILE       Internal supervisor log path
+  --version             Show packaged HiGlass component versions
+  -h, --help            Show this help
 
 Environment:
-  HIGLASS_HOST_PORT  Default host port used only for the printed URL
-  HIGLASS_LOG_FILE   Internal supervisor log path
+  HIGLASS_HOST_PORT       Default host port used only for the printed URL
+  HIGLASS_LOG_FILE        Internal supervisor log path
+  HIGLASS_STARTUP_TIMEOUT Default readiness wait in seconds
 
 The container listens on port 80. Map a host port with Docker/Podman run args:
   -p 127.0.0.1:8888:80
@@ -26,7 +30,7 @@ EOF
 }
 
 print_version() {
-  echo "higlass-docker ${APP_VERSION}"
+  echo "higlass ${APP_VERSION}"
   if [ -r /home/higlass/projects/higlass-app/version.txt ]; then
     cat /home/higlass/projects/higlass-app/version.txt
   fi
@@ -44,6 +48,30 @@ while [ "$#" -gt 0 ]; do
       ;;
     --host-port=*)
       HOST_PORT="${1#*=}"
+      shift
+      ;;
+    --startup-timeout)
+      if [ "$#" -lt 2 ]; then
+        echo "higlass: --startup-timeout requires a value" >&2
+        exit 2
+      fi
+      STARTUP_TIMEOUT="$2"
+      shift 2
+      ;;
+    --startup-timeout=*)
+      STARTUP_TIMEOUT="${1#*=}"
+      shift
+      ;;
+    --log-file)
+      if [ "$#" -lt 2 ]; then
+        echo "higlass: --log-file requires a value" >&2
+        exit 2
+      fi
+      LOG_FILE="$2"
+      shift 2
+      ;;
+    --log-file=*)
+      LOG_FILE="${1#*=}"
       shift
       ;;
     --)
@@ -70,11 +98,65 @@ done
 
 mkdir -p /data/log
 
+show_logs() {
+  echo "higlass: last service log lines:" >&2
+  tail -n 80 "${LOG_FILE}" >&2 2>/dev/null || true
+  tail -n 80 /data/log/hgs.log >&2 2>/dev/null || true
+  tail -n 80 /tmp/uwsgi-*.log >&2 2>/dev/null || true
+  tail -n 80 /tmp/nginx-*.log >&2 2>/dev/null || true
+}
+
+echo "HiGlass is starting. Waiting for the local service to become ready."
+
+supervisord -n -c /home/higlass/projects/supervisord.conf >"${LOG_FILE}" 2>&1 &
+service_pid="$!"
+
+cleanup() {
+  status="$?"
+  if [ -n "${service_pid:-}" ] && kill -0 "${service_pid}" 2>/dev/null; then
+    kill "${service_pid}" 2>/dev/null || true
+    wait "${service_pid}" 2>/dev/null || true
+  fi
+  exit "${status}"
+}
+
+trap cleanup INT TERM EXIT
+
+ready=0
+i=0
+while [ "${i}" -lt "${STARTUP_TIMEOUT}" ]; do
+  if ! kill -0 "${service_pid}" 2>/dev/null; then
+    set +e
+    wait "${service_pid}"
+    service_status="$?"
+    set -e
+    echo "higlass: service exited during startup with status ${service_status}." >&2
+    show_logs
+    exit "${service_status}"
+  fi
+
+  if curl -fsS "http://127.0.0.1/api/v1/tilesets/" >/dev/null 2>&1 \
+     && curl -fsS "http://127.0.0.1/api/v1/viewconfs/?d=default" >/dev/null 2>&1 \
+     && curl -fsS "http://127.0.0.1/app" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+
+  i=$((i + 1))
+  sleep 1
+done
+
+if [ "${ready}" -ne 1 ]; then
+  echo "higlass: service was not ready after ${STARTUP_TIMEOUT} seconds." >&2
+  show_logs
+  exit 1
+fi
+
 cat <<EOF
-HiGlass is starting.
+HiGlass is ready.
 
 Open this URL after mapping the container port to the host:
-  http://127.0.0.1:${HOST_PORT}/
+  http://127.0.0.1:${HOST_PORT}/app
 
 If this is running on a remote server over SSH, tunnel the port first:
   ssh -L ${HOST_PORT}:127.0.0.1:${HOST_PORT} user@server
@@ -84,17 +166,14 @@ Then open the same URL in your local browser.
 Press Ctrl-C to stop the HiGlass session.
 EOF
 
-supervisord -n -c /home/higlass/projects/supervisord.conf >"${LOG_FILE}" 2>&1 &
-service_pid="$!"
-
-cleanup() {
-  status="$?"
-  if kill -0 "${service_pid}" 2>/dev/null; then
-    kill "${service_pid}" 2>/dev/null || true
-    wait "${service_pid}" 2>/dev/null || true
-  fi
-  exit "${status}"
-}
-
-trap cleanup INT TERM EXIT
+set +e
 wait "${service_pid}"
+service_status="$?"
+set -e
+
+if [ "${service_status}" -ne 0 ]; then
+  echo "higlass: service exited with status ${service_status}." >&2
+  show_logs
+fi
+
+exit "${service_status}"
