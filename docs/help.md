@@ -1,4 +1,4 @@
-taf-higlass 2.3.4-r1
+taf-higlass 2.3.5-r1
 
 TAFFISH wrapper for HiGlass, a browser-based genome data viewer for Hi-C
 contact maps and other tiled genomic tracks.
@@ -114,7 +114,9 @@ Learning:
   /data, and start the browser service with the same /data binding.
 
 Notes:
-  - This app builds a TAFFISH viewer from upstream higlass source tag v2.3.4.
+  - This app builds a TAFFISH viewer from upstream higlass source tag v2.3.5.
+  - Upstream v2.3.5 fixes a BedLikeTrack crash when itemRgb contains a
+    comma-containing gene name instead of a numeric RGB triplet.
   - The old DockerHub higlass/higlass-docker image is not used as a base image.
   - The legacy higlass-app bundle is not mixed with newer hglib; this image uses
     a small source-built Vite viewer for the packaged hglib.
@@ -132,7 +134,7 @@ Notes:
     amd64 support vary across clusters.
 
 Container:
-  image: ghcr.io/taffish/higlass:2.3.4-r1
+  image: ghcr.io/taffish/higlass:2.3.5-r1
   backends: apptainer, podman, docker
   native platform: linux/amd64
   arm64 Docker/Podman hosts: amd64 emulation through --platform linux/amd64
@@ -146,8 +148,8 @@ License:
 Upstream:
   source: https://github.com/higlass/higlass
   homepage: https://higlass.io/
-  release: https://github.com/higlass/higlass/tree/v2.3.4
-  source tag: v2.3.4
+  release: https://github.com/higlass/higlass/tree/v2.3.5
+  source tag: v2.3.5
   upstream license: MIT
   citation: Kerpedjiev et al. 2018
   doi: 10.1186/s13059-018-1486-1

@@ -5,16 +5,20 @@ data viewer for Hi-C contact maps and other tiled genomic tracks.
 
 This release follows the "current upstream source" route. It builds a small
 TAFFISH web viewer directly from official
-[higlass/higlass](https://github.com/higlass/higlass) tag `v2.3.4` with Vite,
+[higlass/higlass](https://github.com/higlass/higlass) tag `v2.3.5` with Vite,
 then serves it with a pinned HiGlass server stack. It does not inherit the old
 DockerHub `higlass/higlass-docker` image, and it no longer mixes the legacy
 `higlass-app` bundle with a newer `hglib`.
 
+Release `2.3.5-r1` updates only the HiGlass frontend source tag. Upstream
+`v2.3.5` fixes a BedLikeTrack crash when an `itemRgb` field contains a
+comma-containing gene name instead of a numeric RGB triplet.
+
 Packaged components:
 
 ```text
-higlass frontend source:        v2.3.4
-higlass frontend commit:        5600c33ba6431b1ca53db35be31838115673c843
+higlass frontend source:        v2.3.5
+higlass frontend commit:        b35461175d6593aaa94147ec4885200c7f1f5e5a
 frontend build:                 taffish-vite-viewer
 higlass-server:                 1.14.8
 higlass-server commit:          cbfe79fe3ae0e844b4c0c78142a83733c8cc66a2
@@ -40,7 +44,7 @@ taf install higlass
 Install the exact release:
 
 ```sh
-taf install higlass 2.3.4-r1
+taf install higlass 2.3.5-r1
 ```
 
 For local testing before the app is published to the public index:
@@ -215,10 +219,10 @@ with `taf-higlass higlass-manage ...`, keep input files under the mounted
 ```text
 name: higlass
 command: taf-higlass
-version: 2.3.4-r1
+version: 2.3.5-r1
 kind: tool
-image: ghcr.io/taffish/higlass:2.3.4-r1
-upstream: HiGlass v2.3.4 source
+image: ghcr.io/taffish/higlass:2.3.5-r1
+upstream: HiGlass v2.3.5 source
 native platform: linux/amd64
 ```
 
@@ -227,7 +231,7 @@ native platform: linux/amd64
 The image is built from `docker/Dockerfile`. It uses a two-stage build:
 
 ```text
-frontend stage: node:22-bookworm builds the v2.3.4 HiGlass viewer
+frontend stage: node:22-bookworm builds the v2.3.5 HiGlass viewer
 runtime stage:  ubuntu:20.04 runs higlass-server, nginx, uwsgi, supervisord
 ```
 
@@ -329,8 +333,8 @@ datasets, models, and external resources keep their own license terms.
 project: HiGlass
 homepage: https://higlass.io/
 source:   https://github.com/higlass/higlass
-release:  https://github.com/higlass/higlass/tree/v2.3.4
-source commit: 5600c33ba6431b1ca53db35be31838115673c843
+release:  https://github.com/higlass/higlass/tree/v2.3.5
+source commit: b35461175d6593aaa94147ec4885200c7f1f5e5a
 upstream license: MIT
 citation: Kerpedjiev et al. 2018, HiGlass: web-based visual exploration and analysis of genome interaction maps
 doi:      10.1186/s13059-018-1486-1

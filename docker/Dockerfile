@@ -2,8 +2,8 @@ FROM node:22-bookworm AS frontend
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ARG HIGLASS_VERSION=2.3.4
-ARG HIGLASS_COMMIT=5600c33ba6431b1ca53db35be31838115673c843
+ARG HIGLASS_VERSION=2.3.5
+ARG HIGLASS_COMMIT=b35461175d6593aaa94147ec4885200c7f1f5e5a
 
 WORKDIR /build
 
@@ -85,8 +85,8 @@ RUN ln -s /usr/bin/python3 /usr/local/bin/python \
  && python3 -m pip install --no-cache-dir --upgrade "pip==${PIP_VERSION}" "setuptools==${SETUPTOOLS_VERSION}" "wheel==${WHEEL_VERSION}" \
  && python3 -m pip install --no-cache-dir "Cython==${CYTHON_VERSION}" numpy==1.22.1 "pysam==${PYSAM_VERSION}" "uWSGI==${UWSGI_PIP_VERSION}" "scipy==${SCIPY_VERSION}"
 
-ARG HIGLASS_VERSION=2.3.4
-ARG HIGLASS_COMMIT=5600c33ba6431b1ca53db35be31838115673c843
+ARG HIGLASS_VERSION=2.3.5
+ARG HIGLASS_COMMIT=b35461175d6593aaa94147ec4885200c7f1f5e5a
 ARG HIGLASS_DOCKER_VERSION=0.10.5
 ARG HIGLASS_DOCKER_COMMIT=486514cc69c2a267c4210976daf6558b3e0653cc
 ARG SERVER_VERSION=1.14.8
@@ -172,11 +172,11 @@ COPY docker/higlass /usr/local/bin/higlass
 COPY docker/higlass-manage /usr/local/bin/higlass-manage
 
 RUN chmod 755 /usr/local/bin/higlass /usr/local/bin/higlass-manage \
- && higlass --version | grep -F "higlass 2.3.4" \
- && higlass -- --version | grep -F "higlass 2.3.4" \
- && higlass --version | grep -F "HIGLASS_VERSION: 2.3.4" \
+ && higlass --version | grep -F "higlass 2.3.5" \
+ && higlass -- --version | grep -F "higlass 2.3.5" \
+ && higlass --version | grep -F "HIGLASS_VERSION: 2.3.5" \
  && higlass --version | grep -F "FRONTEND_BUILD: taffish-vite-viewer" \
- && higlass --version | grep -F "FRONTEND_SOURCE: higlass v2.3.4" \
+ && higlass --version | grep -F "FRONTEND_SOURCE: higlass v2.3.5" \
  && higlass --version | grep -F "SERVER_VERSION: 1.14.8" \
  && higlass --version | grep -F "SERVER_COMMIT: cbfe79fe3ae0e844b4c0c78142a83733c8cc66a2" \
  && higlass --version | grep -F "NUMBA_VERSION: 0.56.4" \

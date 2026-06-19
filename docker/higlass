@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_VERSION="2.3.4"
+APP_VERSION="2.3.5"
 HOST_PORT="${HIGLASS_HOST_PORT:-8888}"
 LOG_FILE="${HIGLASS_LOG_FILE:-/tmp/higlass-supervisord.log}"
 STARTUP_TIMEOUT="${HIGLASS_STARTUP_TIMEOUT:-120}"
