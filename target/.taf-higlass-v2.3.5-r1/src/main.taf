@@ -1,2 +1,0 @@
-<taf-app:container:ghcr.io/taffish/higlass:2.3.5-r1$@[docker/podman: --init --platform linux/amd64]>
-higlass ::*ARGV*::

@@ -1,0 +1,6 @@
+{
+  "artifact": "taf-higlass-v2.3.5-r2",
+  "schema": "taffish.build/v1",
+  "source_sha256": "7186bd19f7a25e062f26b9f5d350a03f61e68ce650e7e76e8ed8ed92ef347750",
+  "wrapper_sha256": "863248bb5e7c2207165a8005562ca887f2568d780e36d2e061d51ac6dab387fb"
+}

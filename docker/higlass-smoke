@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE="${1:-all}"
+
+assert_no_port_process() {
+  local port="$1"
+  local cmdline
+  for cmdline in /proc/[0-9]*/cmdline; do
+    [ -r "${cmdline}" ] || continue
+    if tr '\0' ' ' <"${cmdline}" 2>/dev/null | grep -F -- ":${port}" >/dev/null; then
+      printf >&2 'higlass-smoke: leftover process references port %s: %s\n' \
+        "${port}" "${cmdline}"
+      return 1
+    fi
+  done
+}
+
+assert_no_read_only_error() {
+  local path
+  for path in "$@"; do
+    [ -f "${path}" ] || continue
+    if grep -F "Read-only file system" "${path}" >/dev/null; then
+      printf >&2 'higlass-smoke: read-only image-root write detected in %s\n' "${path}"
+      return 1
+    fi
+  done
+}
+
+identity() {
+  higlass --version | grep -F "higlass 2.3.5"
+  higlass -- --version | grep -F "higlass 2.3.5"
+  higlass --version | grep -F "HIGLASS_VERSION: 2.3.5"
+  higlass --version | grep -F "HIGLASS_COMMIT: b35461175d6593aaa94147ec4885200c7f1f5e5a"
+  higlass --version | grep -F "FRONTEND_BUILD: taffish-vite-viewer"
+  higlass --version | grep -F "FRONTEND_SOURCE: higlass v2.3.5"
+  higlass --version | grep -F "HIGLASS_DOCKER_SCAFFOLD_VERSION: 0.10.5"
+  higlass --version | grep -F "HIGLASS_DOCKER_COMMIT: 486514cc69c2a267c4210976daf6558b3e0653cc"
+  higlass --version | grep -F "SERVER_VERSION: 1.14.8"
+  higlass --version | grep -F "SERVER_COMMIT: cbfe79fe3ae0e844b4c0c78142a83733c8cc66a2"
+  higlass --version | grep -F "NUMBA_VERSION: 0.56.4"
+  higlass --version | grep -F "LLVMLITE_VERSION: 0.39.1"
+  higlass --version | grep -F "PANDAS_VERSION: 1.5.3"
+  higlass --version | grep -F "CLODIUS_VERSION: 0.19.0"
+}
+
+help_smoke() {
+  higlass --help | grep -F "Usage: higlass"
+  higlass --help | grep -F -- "--bind-address"
+  higlass --help | grep -F "TAFFISH_HIGLASS_DATA_PATH"
+}
+
+manage_smoke() {
+  higlass-manage help | grep -F "Available subcommands"
+  set +e
+  higlass-manage migrate --noinput > /tmp/taf-higlass-manage-no-bind.log 2>&1
+  local status="$?"
+  set -e
+  test "${status}" -eq 64
+  grep -F "not a real writable bind mount" /tmp/taf-higlass-manage-no-bind.log
+  rm -f /tmp/taf-higlass-manage-no-bind.log
+}
+
+imports_smoke() {
+  python -c 'import clodius, cooler, pandas, numba; print("ok")' | grep -Fx ok
+  test -s /home/higlass/projects/higlass-app/index.html
+  grep -F "TAFFISH HiGlass" /home/higlass/projects/higlass-app/index.html >/dev/null
+}
+
+service_term_smoke() {
+  local smoke_root log runtime_root pid status ready
+  local port=18080
+  smoke_root="$(mktemp -d /tmp/taf-higlass-smoke.XXXXXX)"
+  log="${smoke_root}/service.log"
+  pid=""
+  cleanup_service_term() {
+    if [[ "${pid:-}" =~ ^[0-9]+$ ]] && [ "${pid}" -gt 1 ] && kill -0 "${pid}" 2>/dev/null; then
+      kill -TERM "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+    fi
+    rm -rf -- "${smoke_root}"
+  }
+  trap cleanup_service_term RETURN
+
+  higlass --port "${port}" --host-port 28888 --startup-timeout 90 \
+    --log-file "${smoke_root}/launcher log.log" >"${log}" 2>&1 &
+  pid="$!"
+  ready=0
+  for _ in $(seq 1 100); do
+    if grep -F "HiGlass is ready." "${log}" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    kill -0 "${pid}" 2>/dev/null || break
+    sleep 1
+  done
+  test "${ready}" -eq 1
+  curl -fsS "http://127.0.0.1:${port}/api/v1/tilesets/" | grep -F '"count"' >/dev/null
+  curl -fsS "http://127.0.0.1:${port}/api/v1/viewconfs/?d=default" | grep -F '"views"' >/dev/null
+  curl -fsS "http://127.0.0.1:${port}/app" | grep -F "TAFFISH HiGlass" >/dev/null
+  test "$(grep -n -m1 -F 'HiGlass is starting.' "${log}" | cut -d: -f1)" \
+    -lt "$(grep -n -m1 -F 'HiGlass is ready.' "${log}" | cut -d: -f1)"
+  grep -F "Host URL: http://127.0.0.1:28888/app" "${log}" >/dev/null
+  grep -F "SSH tunnel:" "${log}" >/dev/null
+  grep -F "Stop: press Ctrl-C." "${log}" >/dev/null
+  grep -F "Data mode: ephemeral" "${log}" >/dev/null
+  runtime_root="$(sed -n 's/^Internal logs: \([^ ]*\) and .*$/\1/p' "${log}" | head -n 1)"
+  test -n "${runtime_root}"
+  test -d "${runtime_root}"
+
+  kill -TERM "${pid}"
+  set +e
+  wait "${pid}"
+  status="$?"
+  set -e
+  pid=""
+  test "${status}" -eq 143
+  grep -F "HiGlass is stopping after SIGTERM." "${log}" >/dev/null
+  grep -F "HiGlass stopped." "${log}" >/dev/null
+  assert_no_read_only_error "${log}" "${smoke_root}/launcher log.log"
+  test ! -e "${runtime_root}"
+  assert_no_port_process "${port}"
+}
+
+startup_int_smoke() {
+  local smoke_root log status
+  local port=18082
+  smoke_root="$(mktemp -d /tmp/taf-higlass-smoke-int.XXXXXX)"
+  log="${smoke_root}/service.log"
+  set +e
+  TAFFISH_HIGLASS_TEST_STARTUP_HOLD=60 \
+    timeout --preserve-status --signal=INT --kill-after=10 5 \
+    higlass --port "${port}" --host-port 28889 --startup-timeout 90 \
+      --log-file "${smoke_root}/launcher log.log" >"${log}" 2>&1
+  status="$?"
+  set -e
+  test "${status}" -eq 130
+  grep -F "HiGlass is starting." "${log}" >/dev/null
+  grep -F "HiGlass is stopping after SIGINT." "${log}" >/dev/null
+  grep -F "HiGlass stopped." "${log}" >/dev/null
+  test -z "$(grep -F 'HiGlass is ready.' "${log}" || true)"
+  assert_no_read_only_error "${log}" "${smoke_root}/launcher log.log"
+  assert_no_port_process "${port}"
+  rm -rf -- "${smoke_root}"
+}
+
+critical_smoke() {
+  local smoke_root log status
+  local port=18084
+  smoke_root="$(mktemp -d /tmp/taf-higlass-smoke-critical.XXXXXX)"
+  log="${smoke_root}/service.log"
+  set +e
+  TAFFISH_HIGLASS_TEST_KILL_COMPONENT=nginx \
+    higlass --port "${port}" --host-port 28890 --startup-timeout 90 \
+      --log-file "${smoke_root}/launcher log.log" >"${log}" 2>&1
+  status="$?"
+  set -e
+  test "${status}" -ne 0
+  grep -F "HiGlass is ready." "${log}" >/dev/null
+  grep -F "critical component exited: nginx" "${log}" >/dev/null
+  grep -F "last service log lines" "${log}" >/dev/null
+  assert_no_read_only_error "${log}" "${smoke_root}/launcher log.log"
+  assert_no_port_process "${port}"
+  rm -rf -- "${smoke_root}"
+}
+
+case "${MODE}" in
+  identity) identity ;;
+  help) help_smoke ;;
+  manage) manage_smoke ;;
+  imports) imports_smoke ;;
+  service-term) service_term_smoke ;;
+  startup-int) startup_int_smoke ;;
+  critical) critical_smoke ;;
+  buildtime)
+    identity
+    help_smoke
+    manage_smoke
+    imports_smoke
+    ;;
+  all)
+    identity
+    help_smoke
+    manage_smoke
+    imports_smoke
+    service_term_smoke
+    startup_int_smoke
+    critical_smoke
+    ;;
+  *)
+    printf >&2 'Usage: higlass-smoke {identity|help|manage|imports|service-term|startup-int|critical|buildtime|all}\n'
+    exit 2
+    ;;
+esac

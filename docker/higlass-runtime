@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Shared runtime-state preparation for the HiGlass service and management CLI.
+# The image itself is treated as immutable. A real bind at /data is persistent;
+# otherwise all mutable state is isolated under the caller-provided /tmp root.
+
+taf_higlass_data_is_mounted() {
+  awk '$5 == "/data" { found = 1 } END { exit(found ? 0 : 1) }' /proc/self/mountinfo
+}
+
+taf_higlass_prepare_state() {
+  local runtime_root="$1"
+  local probe
+
+  if taf_higlass_data_is_mounted; then
+    TAFFISH_HIGLASS_DATA_MODE="persistent"
+    TAFFISH_HIGLASS_DATA_ROOT="/data"
+  else
+    TAFFISH_HIGLASS_DATA_MODE="ephemeral"
+    TAFFISH_HIGLASS_DATA_ROOT="${runtime_root}/data"
+  fi
+
+  mkdir -p \
+    "${TAFFISH_HIGLASS_DATA_ROOT}/log" \
+    "${TAFFISH_HIGLASS_DATA_ROOT}/media" \
+    "${TAFFISH_HIGLASS_DATA_ROOT}/cache"
+
+  probe="${TAFFISH_HIGLASS_DATA_ROOT}/.taffish-write-probe.$$"
+  if ! (umask 077 && : >"${probe}"); then
+    printf >&2 'higlass: data root is not writable: %s\n' "${TAFFISH_HIGLASS_DATA_ROOT}"
+    return 73
+  fi
+  rm -f -- "${probe}"
+
+  export TAFFISH_HIGLASS_DATA_MODE TAFFISH_HIGLASS_DATA_ROOT
+  export HIGLASS_SERVER_BASE_DIR="${TAFFISH_HIGLASS_DATA_ROOT}"
+  export HIGLASS_MEDIA_ROOT="${TAFFISH_HIGLASS_DATA_ROOT}/media"
+  export HIGLASS_CACHE_DIR="${TAFFISH_HIGLASS_DATA_ROOT}/cache"
+}
